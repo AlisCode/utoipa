@@ -1650,6 +1650,117 @@ fn derive_serde_flatten() {
 }
 
 #[test]
+fn derive_simple_enum_serde_untagged() {
+    let value: Value = api_doc! {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Foo {
+            Bar(i32),
+            Baz(String),
+        }
+    };
+
+    assert_json_eq!(
+        value,
+        json!({
+            "oneOf": [
+                {
+                    "format": "int32",
+                    "type": "integer",
+                },
+                {
+                    "type": "string",
+                },
+            ],
+        })
+    );
+}
+
+#[test]
+fn derive_simple_enum_with_ref_serde_untagged() {
+    #[derive(Serialize)]
+    struct Foo {
+        name: String,
+        age: u32,
+    }
+
+    let value: Value = api_doc! {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Bar {
+            Baz(i32),
+            FooBar(Foo),
+        }
+    };
+
+    assert_json_eq!(
+        value,
+        json!({
+            "oneOf": [
+                {
+                    "format": "int32",
+                    "type": "integer",
+                },
+                {
+                    "$ref": "#/components/schemas/Foo",
+                },
+            ],
+        })
+    );
+}
+
+#[test]
+fn derive_simple_enum_with_ref_serde_untagged_named_fields() {
+    #[derive(Serialize, ToSchema)]
+    struct Bar {
+        name: String,
+        age: u32,
+    }
+
+    let value: Value = api_doc! {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Foo {
+            One { n: i32 },
+            Two { bar: Bar },
+        }
+    };
+
+    dbg!(&value);
+
+    assert_json_eq!(
+        value,
+        json!({
+            "oneOf": [
+                {
+                    "properties": {
+                      "n": {
+                        "format": "int32",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "n"
+                    ],
+                    "type": "object"
+                },
+                {
+                    "properties": {
+                      "bar": {
+                        "$ref": "#/components/schemas/Bar"
+                      }
+                    },
+                    "required": [
+                      "bar"
+                    ],
+                    "type": "object"
+                }
+            ]
+        })
+    );
+}
+
+#[test]
 fn derive_complex_enum_serde_tag_title() {
     #[derive(Serialize)]
     struct Foo(String);
