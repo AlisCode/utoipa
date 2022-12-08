@@ -57,18 +57,48 @@ impl SerdeValue {
     }
 }
 
+/// The [Serde Enum representation](https://serde.rs/enum-representations.html) being used
+/// The default case (when no serde attributes are present) is `ExternallyTagged`.
+enum SerdeEnumRepr {
+    ExternallyTagged,
+    InternallyTagged {
+        tag: String,
+    },
+    AdjacentlyTagged {
+        tag: String,
+        content: String,
+    },
+    Untagged,
+    /// This is a variant that can never happen because `serde` will not accept it.
+    /// With the current implementation it is necessary to have it as an intermediate state when parsing the
+    /// attributes
+    UnfinishedAdjacentlyTagged {
+        content: String,
+    },
+}
+
+impl Default for SerdeEnumRepr {
+    fn default() -> SerdeEnumRepr {
+        SerdeEnumRepr::ExternallyTagged
+    }
+}
+
 /// Attributes defined within a `#[serde(...)]` container attribute.
 #[derive(Default)]
 #[cfg_attr(feature = "debug", derive(Debug))]
 pub struct SerdeContainer {
     pub rename_all: Option<RenameRule>,
-    pub tag: String,
+    pub enum_repr: SerdeEnumRepr,
     pub default: bool,
 }
 
 impl SerdeContainer {
-    /// Parse a single serde attribute, currently `rename_all = ...`, `tag = ...` and
-    /// `defaut = ...` attributes are supported.
+    /// Parse a single serde attribute, currently supported attributes are :
+    ///     * `rename_all = ...`
+    ///     * `tag = ...`
+    ///     * `content = ...`
+    ///     * `untagged = ...`
+    ///     * `default = ...`
     fn parse_attribute(&mut self, ident: Ident, next: Cursor) -> syn::Result<()> {
         match ident.to_string().as_str() {
             "rename_all" => {
@@ -78,12 +108,50 @@ impl SerdeContainer {
                             .parse::<RenameRule>()
                             .map_err(|error| Error::new(span, error.to_string()))?,
                     );
-                };
+                }
             }
             "tag" => {
                 if let Some((literal, _span)) = parse_next_lit_str(next) {
-                    self.tag = literal
+                    self.enum_repr = match self.enum_repr {
+                        SerdeEnumRepr::ExternallyTagged => {
+                            SerdeEnumRepr::InternallyTagged { tag: literal }
+                        }
+                        SerdeEnumRepr::UnfinishedAdjacentlyTagged { content } => {
+                            SerdeEnumRepr::AdjacentlyTagged {
+                                tag: literal,
+                                content,
+                            }
+                        }
+                        SerdeEnumRepr::InternallyTagged { .. }
+                        | SerdeEnumRepr::AdjacentlyTagged { .. } => {
+                            panic!("Duplicate serde tag argument")
+                        }
+                        SerdeEnumRepr::Untagged => panic!("Untagged enum cannot have tag"),
+                    };
                 }
+            }
+            "content" => {
+                if let Some((literal, _span)) = parse_next_lit_str(next) {
+                    self.enum_repr = match self.enum_repr {
+                        SerdeEnumRepr::InternallyTagged { tag } => {
+                            SerdeEnumRepr::AdjacentlyTagged {
+                                tag,
+                                content: literal,
+                            }
+                        }
+                        SerdeEnumRepr::ExternallyTagged => {
+                            SerdeEnumRepr::UnfinishedAdjacentlyTagged { content: literal }
+                        }
+                        SerdeEnumRepr::AdjacentlyTagged { .. }
+                        | SerdeEnumRepr::UnfinishedAdjacentlyTagged { .. } => {
+                            panic!("Duplicate serde content argument")
+                        }
+                        SerdeEnumRepr::Untagged => panic!("Untagged enum cannot have content"),
+                    };
+                }
+            }
+            "untagged" => {
+                self.enum_repr = SerdeEnumRepr::Untagged;
             }
             "default" => {
                 self.default = true;
