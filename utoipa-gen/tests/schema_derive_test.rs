@@ -1726,8 +1726,6 @@ fn derive_simple_enum_with_ref_serde_untagged_named_fields() {
         }
     };
 
-    dbg!(&value);
-
     assert_json_eq!(
         value,
         json!({
@@ -1756,6 +1754,28 @@ fn derive_simple_enum_with_ref_serde_untagged_named_fields() {
                     "type": "object"
                 }
             ]
+        })
+    );
+}
+
+#[test]
+fn derive_simple_enum_serde_untagged_with_unit_variant() {
+    let value: Value = api_doc! {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Foo {
+            One,
+            Two,
+        }
+    };
+
+    dbg!(&value);
+
+    assert_json_eq!(
+        value,
+        json!({
+            "type": "object",
+            "nullable": true,
         })
     );
 }

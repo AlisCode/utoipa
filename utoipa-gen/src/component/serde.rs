@@ -59,7 +59,8 @@ impl SerdeValue {
 
 /// The [Serde Enum representation](https://serde.rs/enum-representations.html) being used
 /// The default case (when no serde attributes are present) is `ExternallyTagged`.
-enum SerdeEnumRepr {
+#[derive(Debug, Clone)]
+pub enum SerdeEnumRepr {
     ExternallyTagged,
     InternallyTagged {
         tag: String,
@@ -112,14 +113,14 @@ impl SerdeContainer {
             }
             "tag" => {
                 if let Some((literal, _span)) = parse_next_lit_str(next) {
-                    self.enum_repr = match self.enum_repr {
+                    self.enum_repr = match &self.enum_repr {
                         SerdeEnumRepr::ExternallyTagged => {
                             SerdeEnumRepr::InternallyTagged { tag: literal }
                         }
                         SerdeEnumRepr::UnfinishedAdjacentlyTagged { content } => {
                             SerdeEnumRepr::AdjacentlyTagged {
                                 tag: literal,
-                                content,
+                                content: content.clone(),
                             }
                         }
                         SerdeEnumRepr::InternallyTagged { .. }
@@ -132,10 +133,10 @@ impl SerdeContainer {
             }
             "content" => {
                 if let Some((literal, _span)) = parse_next_lit_str(next) {
-                    self.enum_repr = match self.enum_repr {
+                    self.enum_repr = match &self.enum_repr {
                         SerdeEnumRepr::InternallyTagged { tag } => {
                             SerdeEnumRepr::AdjacentlyTagged {
-                                tag,
+                                tag: tag.clone(),
                                 content: literal,
                             }
                         }
@@ -224,8 +225,14 @@ pub fn parse_container(attributes: &[Attribute]) -> Option<SerdeContainer> {
                 if value.default {
                     acc.default = value.default;
                 }
-                if !value.tag.is_empty() {
-                    acc.tag = value.tag;
+                match value.enum_repr {
+                    SerdeEnumRepr::ExternallyTagged => (),
+                    SerdeEnumRepr::Untagged
+                    | SerdeEnumRepr::InternallyTagged { .. }
+                    | SerdeEnumRepr::AdjacentlyTagged { .. }
+                    | SerdeEnumRepr::UnfinishedAdjacentlyTagged { .. } => {
+                        acc.enum_repr = value.enum_repr;
+                    }
                 }
                 if value.rename_all.is_some() {
                     acc.rename_all = value.rename_all;
